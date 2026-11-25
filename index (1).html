@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>我的3D宠物小世界</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,"Noto Sans SC",sans-serif;background:linear-gradient(#b9e8ff,#f8f4d9);color:#294052}
+main{max-width:900px;margin:auto;padding:18px}
+h1{text-align:center;margin:8px 0 4px;font-size:28px}.sub{text-align:center;margin:0 0 14px;color:#496477}
+.panel{background:#ffffffd9;border:2px solid #fff;border-radius:22px;padding:14px;box-shadow:0 8px 24px #42677a22}
+#scene{height:390px;border-radius:18px;overflow:hidden;background:linear-gradient(#8dd7f4 0%,#c9f0ff 60%,#8ed58c 60%,#5fbd77 100%);position:relative}
+#scene canvas{display:block;width:100%;height:100%}
+.controls{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:12px}
+button,select{border:0;border-radius:14px;padding:12px 10px;font-size:15px;font-weight:700;background:#fff;color:#294052;box-shadow:0 3px 0 #d4e3e9;cursor:pointer}
+button:active{transform:translateY(2px);box-shadow:0 1px 0 #d4e3e9}
+button.action{background:#ffdf8b}.petpick{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:12px 0}
+.petpick button{background:#e8f7ff}.petpick button.active{background:#b8e6ff;outline:2px solid #5ca9cf}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:12px}
+.stat{background:#f3fbff;border-radius:14px;padding:10px;text-align:center}
+.stat strong{display:block;font-size:14px}.bar{height:9px;background:#dceaf0;border-radius:10px;margin-top:7px;overflow:hidden}.fill{height:100%;background:#62c58a;width:70%;border-radius:10px;transition:width .3s}
+#message{text-align:center;min-height:25px;margin:10px 0 0;font-weight:650;color:#47758a}
+@media(max-width:520px){#scene{height:320px}.controls{grid-template-columns:repeat(2,1fr)}h1{font-size:24px}}
+</style>
+</head>
+<body>
+<main>
+  <h1>🐾 我的3D宠物小世界</h1>
+  <p class="sub">选择一只小伙伴，照顾它、陪它玩！</p>
+  <section class="panel">
+    <div class="petpick">
+      <button class="active" data-pet="cat">🐱 小猫</button>
+      <button data-pet="dog">🐶 小狗</button>
+      <button data-pet="rabbit">🐰 兔兔</button>
+      <button data-pet="bear">🐻 小熊</button>
+    </div>
+    <div id="scene" aria-label="3D宠物场景"></div>
+    <div class="stats">
+      <div class="stat"><strong>🍎 饱腹度 <span id="hungerN">70</span></strong><div class="bar"><div id="hunger" class="fill"></div></div></div>
+      <div class="stat"><strong>💖 快乐度 <span id="happyN">70</span></strong><div class="bar"><div id="happy" class="fill"></div></div></div>
+      <div class="stat"><strong>🫧 清洁度 <span id="cleanN">70</span></strong><div class="bar"><div id="clean" class="fill"></div></div></div>
+    </div>
+    <div class="controls">
+      <button class="action" id="feed">🍓 喂食</button>
+      <button class="action" id="play">🎾 玩耍</button>
+      <button class="action" id="bath">🛁 洗澡</button>
+      <button id="pet">💗 摸摸它</button>
+      <button id="reset">🔄 重新开始</button>
+      <button id="surprise">🎁 小惊喜</button>
+    </div>
+    <p id="message">你好呀！快来认识你的新朋友吧～</p>
+  </section>
+</main>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+const host=document.getElementById('scene');
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(38,host.clientWidth/host.clientHeight,.1,100);
+camera.position.set(0,2.2,7.5);camera.lookAt(0,1.1,0);
+const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(host.clientWidth,host.clientHeight);renderer.shadowMap.enabled=true;host.appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xffffff,0x7cae86,2));
+const light=new THREE.DirectionalLight(0xffffff,2.1);light.position.set(-3,6,5);light.castShadow=true;scene.add(light);
+const floor=new THREE.Mesh(new THREE.CircleGeometry(3.2,64),new THREE.MeshStandardMaterial({color:0x79c879,roughness:1}));floor.rotation.x=-Math.PI/2;floor.position.y=-.03;floor.scale.set(1.3,1,1);floor.receiveShadow=true;scene.add(floor);
+const mat=(color,roughness=.8)=>new THREE.MeshStandardMaterial({color,roughness});
+let petGroup=new THREE.Group();scene.add(petGroup);let current='cat',bounce=0;
+const colors={cat:0xf3a95f,dog:0xb98253,rabbit:0xf1e8df,bear:0x9b6848};
+function ball(parent,x,y,z,sx,sy,sz,color){const m=new THREE.Mesh(new THREE.SphereGeometry(1,32,24),mat(color));m.position.set(x,y,z);m.scale.set(sx,sy,sz);m.castShadow=true;parent.add(m);return m}
+function makePet(type){
+  scene.remove(petGroup);petGroup=new THREE.Group();scene.add(petGroup);
+  const c=colors[type],dark=type==='rabbit'?0xc9bdb5:type==='cat'?0xd8843c:type==='dog'?0x75472f:0x68442f;
+  ball(petGroup,0,.83,0,.78,.72,.58,c);
+  ball(petGroup,0,1.72,.04,.58,.58,.52,c);
+  // ears
+  if(type==='cat'){
+    for(const x of [-.38,.38]){let e=ball(petGroup,x,2.22,.02,.2,.38,.16,c);e.rotation.z=x<0?-.28:.28;ball(petGroup,x,2.23,.155,.105,.23,.055,0xe98b91)}
+  }else if(type==='rabbit'){
+    for(const x of [-.25,.25]){let e=ball(petGroup,x,2.42,0,.16,.52,.13,c);e.rotation.z=x<0?-.16:.16;ball(petGroup,x,2.42,.12,.075,.37,.04,0xeaa1ae)}
+  }else if(type==='dog'){
+    for(const x of [-.48,.48]){let e=ball(petGroup,x,1.95,.02,.2,.4,.16,dark);e.rotation.z=x<0?-.5:.5}
+  }else{
+    for(const x of [-.3,.3])ball(petGroup,x,2.23,.02,.18,.26,.15,dark);
+  }
+  // eyes, muzzle, nose
+  for(const x of [-.22,.22]){ball(petGroup,x,1.8,.51,.055,.075,.035,0x26313b);ball(petGroup,x-.018,1.83,.542,.018,.022,.012,0xffffff)}
+  ball(petGroup,0,1.57,.53,.2,.13,.12,type==='rabbit'?0xffffff:0xf5d6c2);
+  ball(petGroup,0,1.62,.65,.07,.05,.04,0x5c3940);
+  // feet
+  for(const x of [-.48,.48])ball(petGroup,x,.25,.15,.22,.25,.28,c);
+  // tail
+  let tail=ball(petGroup,.78,.88,-.12,.28,.13,.14,c);tail.rotation.z=.4;
+  petGroup.position.y=.05;
+}
+makePet('cat');
+document.querySelectorAll('[data-pet]').forEach(b=>b.addEventListener('click',()=>{current=b.dataset.pet;document.querySelectorAll('[data-pet]').forEach(x=>x.classList.toggle('active',x===b));makePet(current);say('你选择了新朋友！好好照顾它哦～')}));
+let stats={hunger:70,happy:70,clean:70};
+function update(){for(const k of Object.keys(stats)){document.getElementById(k).style.width=stats[k]+'%';document.getElementById(k+'N').textContent=stats[k]}}
+function say(t){document.getElementById('message').textContent=t}
+function change(k,n){stats[k]=Math.max(0,Math.min(100,stats[k]+n));update()}
+document.getElementById('feed').onclick=()=>{change('hunger',22);change('happy',4);say(' yummy！小家伙吃得很开心 🍓')};
+document.getElementById('play').onclick=()=>{change('happy',22);change('hunger',-8);say('玩得好开心！记得休息一下～ 🎾')};
+document.getElementById('bath').onclick=()=>{change('clean',28);change('happy',3);say('香喷喷啦！🫧')};
+document.getElementById('pet').onclick=()=>{change('happy',12);say('它蹭了蹭你的手，好喜欢你！💗')};
+document.getElementById('surprise').onclick=()=>{const items=['找到了一颗闪亮的小星星 ✨','收到一份小礼物 🎀','草地上出现了漂亮的小蝴蝶 🦋'];change('happy',10);say(items[Math.floor(Math.random()*items.length)])};
+document.getElementById('reset').onclick=()=>{stats={hunger:70,happy:70,clean:70};update();say('重新开始啦！你们又可以一起冒险了～')};
+update();
+let clock=0;
+function animate(){requestAnimationFrame(animate);clock+=.025;petGroup.position.y=.05+Math.sin(clock*2)*.07;petGroup.rotation.y=Math.sin(clock*.7)*.13;renderer.render(scene,camera)}
+animate();
+new ResizeObserver(()=>{const w=host.clientWidth,h=host.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h)}).observe(host);
+setInterval(()=>{change('hunger',-1);change('clean',-1);},18000);
+</script>
+</body>
+</html>
